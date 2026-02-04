@@ -148,3 +148,17 @@ class ShortTermMemory:
     def is_full(self, user_id: str) -> bool:
         """Check if user's memory is at capacity."""
         return self.count(user_id) >= self.max_messages
+
+    def pop_last(self, user_id: str) -> Optional[Message]:
+        """
+        Remove and return the most recent message.
+        
+        Args:
+            user_id: Unique user identifier
+            
+        Returns:
+            The removed message, or None if no messages
+        """
+        if user_id not in self._store or not self._store[user_id]:
+            return None
+        return self._store[user_id].pop()

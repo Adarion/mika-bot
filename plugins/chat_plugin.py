@@ -49,10 +49,14 @@ class ChatPlugin(BasePlugin):
         self._memory_config = memory_config
         self._llm_manager = None
         
+        # Store last request for retry functionality
+        self._last_request: Dict[str, dict] = {}
+        
         # Subscribe to events
         self.subscribe("message.received", self.handle_message)
         self.subscribe("role.changed", self.handle_role_change)
         self.subscribe("memory.clear", self.handle_memory_clear)
+        self.subscribe("chat.retry", self.handle_retry)
         
         print(f"ChatPlugin loaded with system prompt: {self.default_prompt[:50]}...")
     
@@ -120,11 +124,21 @@ class ChatPlugin(BasePlugin):
         if content.startswith("/"):
             return
         
+        # Skip empty messages
+        if not content:
+            return
+        
         # Initialize memory if needed
         self._ensure_memory(llm_manager)
         
         # Get user ID
         user_id = f"{message.platform}:{message.author.id}"
+        
+        # Store context for retry
+        self._last_request[user_id] = {
+            "message": message,
+            "llm_manager": llm_manager
+        }
         
         try:
             # Add user message to memory
@@ -182,10 +196,111 @@ class ChatPlugin(BasePlugin):
             })
             
         except Exception as e:
+            import traceback
+            with open("error_trace.log", "w") as f:
+                f.write(f"ChatPlugin error: {e}\n")
+                f.write(traceback.format_exc())
             print(f"ChatPlugin error: {e}")
             await self.publish("message.reply", {
                 "original": message,
                 "content": "抱歉，处理消息时出错了。"
+            })
+    
+    async def handle_retry(self, event: Event) -> None:
+        """Handle retry request - regenerate last response."""
+        user_id = event.data.get("user_id")
+        original = event.data.get("original")
+        
+        if not user_id or user_id not in self._last_request:
+            await self.publish("message.reply", {
+                "original": original,
+                "content": "没有可以重试的消息记录。"
+            })
+            return
+        
+        last_req = self._last_request[user_id]
+        message = last_req.get("message")
+        llm_manager = last_req.get("llm_manager")
+        
+        if not message or not llm_manager or not self.memory_manager:
+            await self.publish("message.reply", {
+                "original": original,
+                "content": "无法重试，请先发送一条消息。"
+            })
+            return
+        
+        try:
+            # Pop the last assistant response from memory
+            popped = self.memory_manager.short_term.pop_last(user_id)
+            if not popped or popped.role != "assistant":
+                # If it wasn't an assistant message, put it back (or it was None)
+                if popped:
+                    self.memory_manager.short_term.add(user_id, popped.role, popped.content)
+                await self.publish("message.reply", {
+                    "original": original,
+                    "content": "没有找到上一条回复，无法重试。"
+                })
+                return
+            
+            # Get the last user message content
+            messages = self.memory_manager.get_messages_for_llm(user_id)
+            if not messages:
+                await self.publish("message.reply", {
+                    "original": original,
+                    "content": "没有可重试的对话。"
+                })
+                return
+            
+            last_user_msg = messages[-1].get("content", "") if messages else ""
+            
+            # Build context with memory
+            context = await self.memory_manager.get_context(user_id, last_user_msg)
+            
+            # Get user's current system prompt (considers role)
+            base_prompt = self.get_system_prompt(user_id)
+            system_prompt = base_prompt
+            if context:
+                system_prompt = f"{base_prompt}\n\n{context}"
+            
+            # Get LLM response
+            provider = self.config.get("llm_provider")
+            
+            if messages and hasattr(llm_manager, 'chat_with_history'):
+                response = await llm_manager.chat_with_history(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    provider=provider
+                )
+            else:
+                response = await llm_manager.chat(
+                    prompt=last_user_msg,
+                    system_prompt=system_prompt,
+                    provider=provider
+                )
+            
+            # Add new assistant response to memory
+            await self.memory_manager.add_message(user_id, "assistant", response)
+            
+            # Smart Bubble Splitting
+            final_content = response
+            if "```" not in response:
+                parts = [p.strip() for p in response.split('\n') if p.strip()]
+                if len(parts) > 1:
+                    final_content = parts
+            
+            # Publish reply event
+            await self.publish("message.reply", {
+                "original": original,
+                "content": final_content
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"ChatPlugin retry error: {e}")
+            print(traceback.format_exc())
+            await self.publish("message.reply", {
+                "original": original,
+                "content": "重试时出错了，请稍后再试。"
             })
     
     async def on_unload(self) -> None:

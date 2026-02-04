@@ -52,6 +52,7 @@ class CommandPlugin(BasePlugin):
         self.register_command("role", self.cmd_role, "切换角色 (如: /role 圣园未花)")
         self.register_command("roles", self.cmd_roles, "显示可用角色列表")
         self.register_command("reload_roles", self.cmd_reload_roles, "重载角色配置")
+        self.register_command("retry", self.cmd_retry, "重新生成上一条回复")
         
         print(f"CommandPlugin loaded with prefix: {self.prefix}")
 
@@ -236,3 +237,16 @@ class CommandPlugin(BasePlugin):
         self._load_roles_from_disk()
         count = len(self._available_roles)
         return f"♻️ 已重载角色配置，当前可用角色数: {count}"
+
+    async def cmd_retry(self, message, args: str, context: Dict) -> Optional[str]:
+        """Retry generating the last response."""
+        user_id = f"{message.platform}:{message.author.id}"
+        
+        # Publish event to chat plugin
+        await self.publish("chat.retry", {
+            "user_id": user_id,
+            "original": message
+        })
+        
+        # Return None since chat plugin will handle the reply
+        return None
