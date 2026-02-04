@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.bak
+.venv/
+env/
+.env
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Project Specific
+data/roles.yaml  # User configuration (do not track)
+config.yaml      # Secrets (do not track)
+web/dist/        # Build artifacts
+*.hash           # Password hash files
+get-pip.py
+
+# System
+.DS_Store
+Thumbs.db
+config.yaml
+*.log
+/data/*
+*/dist/*

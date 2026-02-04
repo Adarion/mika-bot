@@ -1,0 +1,44 @@
+# Mika-Bot Configuration
+# Copy this file to config.yaml and fill in your values.
+
+# IM Platform Configuration
+im:
+  - type: qq
+    app_id: ${QQ_APP_ID}
+    token: ${QQ_BOT_TOKEN}
+    secret: ${QQ_APP_SECRET}
+
+# LLM Provider Configuration
+llm:
+  default: openai
+  providers:
+    openai:
+      api_key: ${LLM_API_KEY}
+      base_url: ${LLM_BASE_URL}
+      model: ${LLM_MODEL}
+    # Uncomment to add Vertex AI
+    # vertex:
+    #   project_id: ${GCP_PROJECT_ID}
+    #   location: us-central1
+    #   model: gemini-1.5-pro
+
+# Plugins to load
+plugins:
+  - chat_plugin
+  - command_plugin
+  # - scheduler_plugin
+  # - agent_plugin
+
+# Plugin-specific configurations
+plugin_configs:
+  chat_plugin:
+    system_prompt: "You are Mika, a friendly and helpful AI assistant."
+  command_plugin:
+    prefix: "/"
+  scheduler_plugin:
+    tasks: []
+      # - name: daily_greeting
+      #   cron: "0 9 * * *"
+      #   event: scheduled.daily_greeting
+  agent_plugin:
+    max_iterations: 5
