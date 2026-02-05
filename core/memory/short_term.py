@@ -84,14 +84,14 @@ class ShortTermMemory:
     
     def get_formatted(self, user_id: str, limit: Optional[int] = None) -> str:
         """
-        Get messages formatted as conversation string.
+        Get messages formatted as conversation string with timestamps.
         
         Args:
             user_id: Unique user identifier
             limit: Optional limit on number of messages
             
         Returns:
-            Formatted conversation string
+            Formatted conversation string with time info
         """
         messages = self.get(user_id, limit)
         if not messages:
@@ -100,7 +100,8 @@ class ShortTermMemory:
         lines = []
         for msg in messages:
             role_label = "用户" if msg.role == "user" else "助手"
-            lines.append(f"{role_label}: {msg.content}")
+            time_str = msg.timestamp.strftime("%m-%d %H:%M")
+            lines.append(f"[{time_str}] {role_label}: {msg.content}")
         
         return "\n".join(lines)
     

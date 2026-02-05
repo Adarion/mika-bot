@@ -141,30 +141,34 @@ class ChatPlugin(BasePlugin):
         }
         
         try:
-            # Add user message to memory
-            if self.memory_manager:
-                await self.memory_manager.add_message(user_id, "user", content)
-            
-            # Build context with memory
+            # Build context with memory (but don't add message yet - only after success)
             context = ""
             if self.memory_manager:
                 context = await self.memory_manager.get_context(user_id, content)
             
             # Get user's current system prompt (considers role)
             base_prompt = self.get_system_prompt(user_id)
-            system_prompt = base_prompt
+            
+            # Add current time to prompt
+            from datetime import datetime
+            current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+            time_info = f"[当前时间: {current_time}]"
+            
+            system_prompt = f"{base_prompt}\n\n{time_info}"
             if context:
-                system_prompt = f"{base_prompt}\n\n{context}"
+                system_prompt = f"{base_prompt}\n\n{time_info}\n\n{context}"
             
             # Get LLM response
             provider = self.config.get("llm_provider")
             messages = []
             
-            # Use conversation history if available
+            # Use conversation history if available, plus current message
             if self.memory_manager:
                 messages = self.memory_manager.get_messages_for_llm(user_id)
+            # Append current user message for the API call (not yet in memory)
+            messages.append({"role": "user", "content": content})
             
-            if messages and hasattr(llm_manager, 'chat_with_history'):
+            if hasattr(llm_manager, 'chat_with_history'):
                 response = await llm_manager.chat_with_history(
                     messages=messages,
                     system_prompt=system_prompt,
@@ -177,8 +181,10 @@ class ChatPlugin(BasePlugin):
                     provider=provider
                 )
             
-            # Add assistant response to memory
+            # Only add to memory AFTER successful LLM response
+            # This prevents network errors from polluting memory
             if self.memory_manager:
+                await self.memory_manager.add_message(user_id, "user", content)
                 await self.memory_manager.add_message(user_id, "assistant", response)
             
             # Smart Bubble Splitting
