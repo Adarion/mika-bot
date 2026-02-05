@@ -239,13 +239,14 @@ class CommandPlugin(BasePlugin):
         return f"♻️ 已重载角色配置，当前可用角色数: {count}"
 
     async def cmd_retry(self, message, args: str, context: Dict) -> Optional[str]:
-        """Retry generating the last response."""
+        """Retry generating the last response. Optionally provide new input."""
         user_id = f"{message.platform}:{message.author.id}"
         
-        # Publish event to chat plugin
+        # Publish event to chat plugin with optional modified input
         await self.publish("chat.retry", {
             "user_id": user_id,
-            "original": message
+            "original": message,
+            "modified_input": args.strip() if args else None
         })
         
         # Return None since chat plugin will handle the reply

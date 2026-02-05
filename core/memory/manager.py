@@ -82,6 +82,13 @@ class MemoryManager:
         # Add to short-term
         self.short_term.add(user_id, role, content)
         
+        # Index to RAG immediately for semantic search
+        # This ensures messages are searchable even before summarization
+        if self.rag and self.rag.enabled and content.strip():
+            recent = self.short_term.get_for_llm(user_id, limit=2)  # Get last 2 messages
+            if len(recent) >= 2:  # Index user-assistant pairs
+                self.rag.add_conversation(user_id, recent, chunk_size=2)
+        
         # Track for summarization
         self._message_counts[user_id] = self._message_counts.get(user_id, 0) + 1
         
@@ -92,10 +99,13 @@ class MemoryManager:
     def _should_summarize(self, user_id: str) -> bool:
         """Check if we should summarize the conversation."""
         count = self._message_counts.get(user_id, 0)
+        # Summarize every 5 messages after reaching minimum threshold
+        # This ensures facts are extracted before short-term memory drops them
+        min_threshold = min(self.summarize_threshold, 10)
         return (
-            count >= self.summarize_threshold 
+            count >= min_threshold 
             and self.summarizer is not None
-            and count % (self.summarize_threshold // 2) == 0
+            and count % 5 == 0  # Every 5 messages
         )
     
     async def _perform_summarization(self, user_id: str) -> None:

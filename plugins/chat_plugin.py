@@ -210,6 +210,7 @@ class ChatPlugin(BasePlugin):
         """Handle retry request - regenerate last response."""
         user_id = event.data.get("user_id")
         original = event.data.get("original")
+        modified_input = event.data.get("modified_input")  # Optional new input
         
         if not user_id or user_id not in self._last_request:
             await self.publish("message.reply", {
@@ -231,18 +232,28 @@ class ChatPlugin(BasePlugin):
         
         try:
             # Pop the last assistant response from memory
-            popped = self.memory_manager.short_term.pop_last(user_id)
-            if not popped or popped.role != "assistant":
+            popped_assistant = self.memory_manager.short_term.pop_last(user_id)
+            if not popped_assistant or popped_assistant.role != "assistant":
                 # If it wasn't an assistant message, put it back (or it was None)
-                if popped:
-                    self.memory_manager.short_term.add(user_id, popped.role, popped.content)
+                if popped_assistant:
+                    self.memory_manager.short_term.add(user_id, popped_assistant.role, popped_assistant.content)
                 await self.publish("message.reply", {
                     "original": original,
                     "content": "没有找到上一条回复，无法重试。"
                 })
                 return
             
-            # Get the last user message content
+            # If modified input provided, also replace the last user message
+            if modified_input:
+                popped_user = self.memory_manager.short_term.pop_last(user_id)
+                if popped_user and popped_user.role == "user":
+                    # Add the new user message instead
+                    self.memory_manager.short_term.add(user_id, "user", modified_input)
+                elif popped_user:
+                    # Put it back if it wasn't a user message
+                    self.memory_manager.short_term.add(user_id, popped_user.role, popped_user.content)
+            
+            # Get the last user message content (may be modified)
             messages = self.memory_manager.get_messages_for_llm(user_id)
             if not messages:
                 await self.publish("message.reply", {
@@ -251,7 +262,7 @@ class ChatPlugin(BasePlugin):
                 })
                 return
             
-            last_user_msg = messages[-1].get("content", "") if messages else ""
+            last_user_msg = modified_input if modified_input else (messages[-1].get("content", "") if messages else "")
             
             # Build context with memory
             context = await self.memory_manager.get_context(user_id, last_user_msg)
